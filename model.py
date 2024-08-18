@@ -3,6 +3,7 @@ from typing import Optional, Tuple
 from torch import Tensor
 from torch.nn import Embedding, LSTM, Linear
 from torch.optim import Adam
+from torch.optim.lr_scheduler import LambdaLR
 from torch.nn.functional import cross_entropy
 from torchmetrics.functional import accuracy
 from pytorch_lightning import LightningModule
@@ -15,6 +16,8 @@ class SudokuSolver(LightningModule):
         embed_size = hyperparameters['embed_size']
         hidden_size = hyperparameters['hidden_size']
         num_layers = hyperparameters['num_layers']
+        self.max_epochs = hyperparameters['max_epochs']
+        self.warmup_steps = hyperparameters['warmup_steps']
         self.lr = hyperparameters['lr']
         
         self.embedding = Embedding(vocab_size, embed_size)
@@ -27,9 +30,10 @@ class SudokuSolver(LightningModule):
         self.save_hyperparameters()
         self.example_input_array = torch.randint(0, 10, (1, 81), dtype=torch.long)
 
-    def forward(self, puzzles: Tensor, solutions: Optional[Tensor] = None, teacher_forcing_ratio=0.5):
+    def forward(self, puzzles: Tensor, solutions: Optional[Tensor] = None):
         embedded_puzzle = self.embedding(puzzles)
         _, (hidden, cell) = self.encoder(embedded_puzzle)
+        teacher_forcing_ratio = self.get_teacher_forcing(self.current_epoch)
         
         decoder_input = puzzles[:, 0].unsqueeze(1) if solutions is None else solutions[:, 0].unsqueeze(1)
         outputs = []
@@ -50,6 +54,9 @@ class SudokuSolver(LightningModule):
     
         outputs = torch.cat(outputs, dim=1)
         return outputs
+
+    def get_teacher_forcing(self, epoch: int) -> float:
+        return 1 - (epoch / self.max_epochs)
     
     def training_step(self, batch: Tuple[Tensor, Tensor], batch_idx):
         puzzles, solutions = batch
@@ -94,4 +101,20 @@ class SudokuSolver(LightningModule):
         return loss
 
     def configure_optimizers(self):
-        return Adam(self.parameters(), lr=self.lr)
+        optimizer = Adam(self.parameters(), lr=self.lr)
+        
+        def lr_lambda(current_step: int):
+            if current_step < self.warmup_steps:
+                return float(current_step) / float(max(1, self.warmup_steps))
+            return 0.5 * (1 + torch.cos(torch.pi * (current_step - self.warmup_steps) / (self.max_epochs * len(self.train_dataloader()) - self.warmup_steps)))
+
+        scheduler = LambdaLR(optimizer, lr_lambda=lr_lambda)
+        
+        return {
+            'optimizer': optimizer,
+            'lr_scheduler': {
+                'scheduler': scheduler,
+                'interval': 'step',
+                'frequency': 1
+            }
+        }
