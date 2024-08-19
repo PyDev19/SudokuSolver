@@ -14,10 +14,14 @@ class SudokuDataset(Dataset):
         return len(self.puzzles)
 
     def __getitem__(self, idx):
-        puzzle = torch.tensor([int(digit) for digit in self.puzzles[idx]], dtype=torch.long)
-        solution = torch.tensor([int(digit) for digit in self.solutions[idx]], dtype=torch.long)
+        puzzle = [int(digit) for digit in self.puzzles[idx]]
+        solution = [int(digit) for digit in self.solutions[idx]]
         
-        return puzzle, solution
+        puzzle_grid = torch.tensor(puzzle, dtype=torch.float32).view(1, 9, 9)
+        solution_grid = torch.tensor(solution, dtype=torch.long).view(9, 9)
+        
+        return puzzle_grid, solution_grid
+
 
 class SudokuDataModule(LightningDataModule):
     def __init__(self, data: DataFrame, hyperparameters: dict[str, Union[int, float]]):
