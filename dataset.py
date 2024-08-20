@@ -18,7 +18,7 @@ class SudokuDataset(Dataset):
         solution = [int(digit) for digit in self.solutions[idx]]
         
         puzzle_grid = torch.tensor(puzzle, dtype=torch.float32).view(1, 9, 9)
-        solution_grid = torch.tensor(solution, dtype=torch.long).view(9, 9)
+        solution_grid = torch.tensor(solution, dtype=torch.long).view(9, 9) - 1
         
         return puzzle_grid, solution_grid
 
