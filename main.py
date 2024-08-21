@@ -1,41 +1,28 @@
 import pandas as pd
-from dataset import SudokuDataset
-
-data = pd.read_csv('data/sudoku.csv')
-dataset = SudokuDataset(data)
-
-from torch.utils.data import random_split
-
-train_size = int(0.6 * len(dataset))
-val_size = int(0.2 * len(dataset))
-test_size = len(dataset) - train_size - val_size
-
-train_dataset, val_dataset, test_dataset = random_split(dataset, [train_size, val_size, test_size])
-
-from torch.utils.data import DataLoader
-import multiprocessing
-
-num_workers = multiprocessing.cpu_count()-1
-train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True, num_workers=num_workers)
-val_loader = DataLoader(val_dataset, batch_size=64, shuffle=False, num_workers=num_workers)
-test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False, num_workers=num_workers)
-
-from model import SudokuSolver
-
-hyperparameters = {
-    'vocab_size': 10,
-    'embed_size': 128,
-    'hidden_size': 256,
-    'num_layers': 2,
-    'lr': 1e-3
-}
-
-model = SudokuSolver(hyperparameters)
-
+from dataset import SudokuDataModule
+from model import SudokuSolverCNN
+from lightning.pytorch.utilities.model_summary import ModelSummary
 from pytorch_lightning import Trainer
 from pytorch_lightning.tuner.tuning import Tuner
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, LearningRateMonitor
+
+hyperparameters = {
+    'num_classes': 10,
+    'cnn_channels': [32, 64, 128, 256, 512],
+    'lr': 1e-3,
+    'batch_size': 64,
+    'val_split': 0.2,
+    'test_split': 0.2,
+    'num_workers': 4,
+    'max_epochs': 10,
+}
+
+data = pd.read_csv('data/sudoku_small.csv')
+dataset = SudokuDataModule(data, hyperparameters)
+
+model = SudokuSolverCNN(hyperparameters)
+print(ModelSummary(model, max_depth=2))
 
 trainer = Trainer(
     max_epochs=10,
@@ -46,9 +33,10 @@ trainer = Trainer(
         LearningRateMonitor(logging_interval='step')
     ],
     enable_checkpointing=True,
-    enable_model_summary=True,
     enable_progress_bar=True,
 )
 tuner = Tuner(trainer)
 
-tuner.lr_find(model, train_loader, val_loader)
+tuner.lr_find(model, datamodule=dataset, max_lr=10, min_lr=1e-10, num_training=9375)
+trainer.fit(model, datamodule=dataset)
+trainer.test(model, datamodule=dataset)

@@ -1,7 +1,7 @@
 import torch
 from typing import Tuple
 from torch import Tensor
-from torch.nn import Conv2d, Sequential, ReLU
+from torch.nn import Conv2d, Sequential, ReLU, Softmax
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.nn.functional import cross_entropy
@@ -26,12 +26,16 @@ class SudokuSolverCNN(LightningModule):
             self.cnn.add_module(f'relu_{i}', ReLU())
         
         self.cnn.add_module('conv_final', Conv2d(cnn_channels[-1], self.num_classes, kernel_size=1))
-            
+        self.output = Softmax(dim=1)
+        
         self.save_hyperparameters()
         self.example_input_array = torch.rand(1, 1, 9, 9)
 
     def forward(self, input_tensor: Tensor) -> Tensor:
-        return self.cnn(input_tensor)
+        cnn_features = self.cnn(input_tensor)
+        output = self.output(cnn_features)
+        
+        return output
     
     def training_step(self, batch: Tuple[Tensor, Tensor], batch_idx: int) -> Tensor:
         sudoku_puzzle, sudoku_solution = batch
